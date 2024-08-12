@@ -1,0 +1,253 @@
+#include <iostream>
+#include <vector>
+#include <ctime>
+#include <algorithm>
+#include <cctype> // Para la función isalpha
+
+using namespace std;
+
+const int NUM_CARTAS = 52;
+
+enum Palo { CORAZONES, DIAMANTES, TREBOLOS, PICAS };
+enum Valor { AS = 1, DOS, TRES, CUATRO, CINCO, SEIS, SIETE, OCHO, NUEVE, DIEZ, JOTA, REINA, REY };
+
+struct Carta {
+    Palo palo;
+    Valor valor;
+    bool bocaArriba;
+};
+
+void inicializarBaraja(vector<Carta>& baraja) {
+    for (int palo = CORAZONES; palo <= PICAS; ++palo) {
+        for (int valor = AS; valor <= REY; ++valor) {
+            baraja.push_back({static_cast<Palo>(palo), static_cast<Valor>(valor), false});
+        }
+    }
+}
+
+void mezclarBaraja(vector<Carta>& baraja) {
+    srand(time(0));
+    random_shuffle(baraja.begin(), baraja.end());
+}
+
+void mostrarCarta(const Carta& carta) {
+    const char* nombresPalo[] = {"♥", "♦", "♣", "♠"};
+    const char* nombresValor[] = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
+    
+    if (carta.bocaArriba) {
+        cout << nombresValor[carta.valor - 1] << nombresPalo[carta.palo];
+    } else {
+        cout << "[XX]";
+    }
+}
+
+void mostrarBaraja(const vector<Carta>& baraja) {
+    for (const auto& carta : baraja) {
+        mostrarCarta(carta);
+        cout << " ";
+    }
+    cout << endl;
+}
+
+struct Pila {
+    vector<Carta> cartas;
+};
+
+struct Juego {
+    Pila tableau[7];
+    Pila baraja;
+    Pila waste;
+    Pila fundaciones[4];
+    int puntaje;
+};
+
+void inicializarJuego(Juego& juego, vector<Carta>& baraja) {
+    int indice = 0;
+    for (int i = 0; i < 7; ++i) {
+        for (int j = 0; j <= i; ++j) {
+            Carta carta = baraja[indice++];
+            if (j == i) carta.bocaArriba = true;
+            juego.tableau[i].cartas.push_back(carta);
+        }
+    }
+    while (indice < baraja.size()) {
+        juego.baraja.cartas.push_back(baraja[indice++]);
+    }
+    juego.puntaje = 0;
+}
+
+bool movimientoValido(const Carta& origen, const Carta& destino) {
+    if ((origen.palo == CORAZONES || origen.palo == DIAMANTES) && (destino.palo == TREBOLOS || destino.palo == PICAS) ||
+        (origen.palo == TREBOLOS || origen.palo == PICAS) && (destino.palo == CORAZONES || destino.palo == DIAMANTES)) {
+        return origen.valor == destino.valor - 1;
+    }
+    return false;
+}
+
+bool movimientoSecuenciaValido(const vector<Carta>& origen, const Carta& destino) {
+    if (origen.empty()) return false;
+    for (size_t i = 1; i < origen.size(); ++i) {
+        if (!movimientoValido(origen[i], origen[i - 1])) return false;
+    }
+    return movimientoValido(origen.front(), destino);
+}
+
+void moverCartas(Pila& origen, Pila& destino, int& puntaje, int numCartas) {
+    if (numCartas > origen.cartas.size()) return;
+    
+    vector<Carta> cartasAMover(origen.cartas.end() - numCartas, origen.cartas.end());
+    if (destino.cartas.empty() || movimientoSecuenciaValido(cartasAMover, destino.cartas.back())) {
+        destino.cartas.insert(destino.cartas.end(), cartasAMover.begin(), cartasAMover.end());
+        origen.cartas.erase(origen.cartas.end() - numCartas, origen.cartas.end());
+        puntaje += 10 * numCartas;
+        if (!origen.cartas.empty() && !origen.cartas.back().bocaArriba) {
+            origen.cartas.back().bocaArriba = true;
+        }
+    }
+}
+
+void pasarCartaDelBarajaAWaste(Juego& juego) {
+    if (!juego.baraja.cartas.empty()) {
+        Carta carta = juego.baraja.cartas.back();
+        juego.baraja.cartas.pop_back();
+        carta.bocaArriba = true; // Voltea la carta cuando está en el waste
+        juego.waste.cartas.push_back(carta);
+    } else {
+        cout << "No hay cartas en la baraja para pasar al waste." << endl;
+    }
+}
+
+void moverCartaDelWasteAlTableau(Juego& juego, int destino) {
+    if (destino >= 1 && destino <= 7 && !juego.waste.cartas.empty()) {
+        Carta carta = juego.waste.cartas.back();
+        juego.waste.cartas.pop_back();
+        carta.bocaArriba = true; // Asegúrate de que esté boca arriba al moverla
+        juego.tableau[destino - 1].cartas.push_back(carta);
+    } else {
+        cout << "No hay cartas en el waste para mover o la opción es inválida." << endl;
+    }
+}
+
+void mostrarJuego(const Juego& juego) {
+    cout << "Puntaje actual: " << juego.puntaje << endl;
+    cout << "Tableau:" << endl;
+    for (int i = 0; i < 7; ++i) {
+        cout << "Pila " << i + 1 << ": ";
+        mostrarBaraja(juego.tableau[i].cartas);
+    }
+    cout << "Baraja: ";
+    mostrarBaraja(juego.baraja.cartas);
+    cout << "Waste: ";
+    mostrarBaraja(juego.waste.cartas);
+    for (int i = 0; i < 4; ++i) {
+        cout << "Fundación " << i + 1 << ": ";
+        mostrarBaraja(juego.fundaciones[i].cartas);
+    }
+}
+
+void jugar(Juego& juego, int& puntajeTotal) {
+    string nombre;
+    bool nombreValido = false;
+
+    while (!nombreValido) {
+        cout << "Ingrese un nombre: ";
+        cin >> nombre;
+        nombreValido = all_of(nombre.begin(), nombre.end(), [](char c){ return isalpha(c); });
+
+        if (!nombreValido) {
+            cout << "El nombre solo puede contener letras. Intente de nuevo." << endl;
+        }
+    }
+
+    cout << "Bienvenido, " << nombre << "! Vamos a jugar!" << endl;
+
+    int opcion, origen, destino, numCartas;
+    while (true) {
+        mostrarJuego(juego);
+        cout << "Seleccione una opción:" << endl;
+        cout << "1) Mover carta del tableau" << endl;
+        cout << "2) Pasar carta del baraja al waste" << endl;
+        cout << "3) Mover carta del waste al tableau" << endl;
+        cout << "0) Salir" << endl;
+        cout << "Opción: ";
+        cin >> opcion;
+
+        if (opcion == 0) break;
+
+        if (opcion == 1) {
+            cout << "Mover de (0 para salir): ";
+            cin >> origen;
+            if (origen == 0) break;
+            cout << "Mover a: ";
+            cin >> destino;
+            cout << "Número de cartas a mover: ";
+            cin >> numCartas;
+            if (origen >= 1 && origen <= 7 && destino >= 1 && destino <= 7) {
+                moverCartas(juego.tableau[origen - 1], juego.tableau[destino - 1], juego.puntaje, numCartas);
+            }
+        } else if (opcion == 2) {
+            pasarCartaDelBarajaAWaste(juego);
+        } else if (opcion == 3) {
+            cout << "Mover carta del waste a la pila: ";
+            cin >> destino;
+            moverCartaDelWasteAlTableau(juego, destino);
+        } else {
+            cout << "Opción no válida. Intente de nuevo." << endl;
+        }
+    }
+    puntajeTotal += juego.puntaje;
+    cout << "Puntaje total acumulado: " << puntajeTotal << endl;
+}
+
+void mostrarReglas() {
+    cout << "Reglas del Juego de Solitario:" << endl;
+    cout << "1. El objetivo del juego es mover todas las cartas a las fundaciones, organizadas por palo y en orden ascendente." << endl;
+    cout << "2. Las cartas en el tableau deben ser organizadas en orden descendente y alternando colores." << endl;
+    cout << "3. Solo un rey puede colocarse en una columna vacía del tableau." << endl;
+    cout << "4. Puede voltear una carta de la baraja y moverla al waste, de donde se puede mover al tableau o a las fundaciones." << endl;
+    cout << "5. Puede mover una carta o una secuencia de cartas entre columnas del tableau si cumplen con las reglas de orden y color alternado." << endl;
+    cout << "6. El juego termina cuando todas las cartas están en las fundaciones o no hay más movimientos posibles." << endl;
+    cout << endl;
+}
+
+void mostrarCreditos() {
+    cout << "Hecho por Matias Morillo y Alex Mena" << endl;
+}
+
+int main() {
+    vector<Carta> baraja;
+    Juego juego;
+    int opcion;
+    int puntajeTotal = 0;  // Variable para puntaje acumulado
+    
+    do {
+        cout << "1) Jugar" << endl;
+        cout << "2) Reglas" << endl;
+        cout << "3) Créditos" << endl;
+        cout << "4) Salir" << endl;
+        cout << "Seleccione una opción: ";
+        cin >> opcion;
+        
+        switch(opcion) {
+            case 1:
+                inicializarBaraja(baraja);
+                mezclarBaraja(baraja);
+                inicializarJuego(juego, baraja);
+                jugar(juego, puntajeTotal);
+                break;
+            case 2:
+                mostrarReglas();
+                break;
+            case 3:
+                mostrarCreditos();
+                break;
+            case 4:
+                cout << "Saliendo del juego." << endl;
+                break;
+            default:
+                cout << "Opción no válida. Intente de nuevo." << endl;
+        }
+    } while(opcion != 4);
+    
+    return 0;
+}
